@@ -1,2 +1,2 @@
 # TM-GCN
-Pytorch code for our method called TM-GCN, a Dynamic Graph Convolutional Networks Using the Tensor M-Product
+Pytorch code for TM-GCN method, a Dynamic Graph Convolutional Networks Using the Tensor M-Product

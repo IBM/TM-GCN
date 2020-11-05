@@ -356,6 +356,72 @@ class EmbeddingGCN2(nn.Module):
 
 		return output
 
+class EmbeddingGCN_reg(nn.Module):
+	"""
+	Our proposed TensorGCN with 1 layer
+	"""
+	def __init__(self, At, X, M, hidden_feat=[2,2], condensed_W=False, use_Minv=True):
+		"""
+		Initialize EmbeddingGCN layer
+
+		Parameters:
+			At				:	torch.Tensor
+				A tensor containing the M-transformed version of the normalized graph Laplacian. It should be of size T x N x N, where T is the number of time steps, and N is the number of nodes.
+			X				:	torch.Tensor
+				A tensor of size T x N x 2 which contains the node signals. T is time, and N is the number of nodes. The size 2 third dimension comes from the fact that, in this experiment, each node has 2 features.
+			edges			:	torch.Tensor, dtype=t.long
+				A matrix of size 3 x no_edges which contains information on the edges. Specifically, each column of edges has three entries: time slice, source node and target node.
+			M				: 	torch.Tensor
+				A matrix of size T x T, where T is the number of time steps. M is assumed to be invertible.
+			hidden_feat 	:	list of int
+				The number of hidden layers to utilize. More specifically, this is the number of features for each node that the GCN outputs. Should be list of 2 integers.
+			condensed_W		:	bool
+				Set to True to use condensed weight tensor, i.e., use the same weight matrix for each time point.
+			use_Minv		:	bool
+				Set to False to avoid every applying the inverse M transform.
+		"""
+		super(EmbeddingGCN_reg, self).__init__()
+		self.M = M
+		self.use_Minv = use_Minv
+		if use_Minv:
+			self.Minv = t.tensor(np.linalg.inv(M))
+		self.T = X.shape[0]
+		self.N = X.shape[1]
+		self.F = [X.shape[-1]] + hidden_feat
+		if condensed_W:
+			self.W = nn.Parameter(t.randn(self.F[0], self.F[1]))
+		else:
+			self.W = nn.Parameter(t.randn(self.T, self.F[0], self.F[1]))
+		self.lin1 = nn.Linear(self.F[1], 1)
+		self.sigmoid = nn.Sigmoid()
+		
+		self.AtXt = self.compute_AtXt(At, X)
+
+	def __call__(self, At=None, X=None):
+		return self.forward(At, X)
+
+	def compute_AtXt(self, At, X):
+		Xt = t.matmul(self.M, X.reshape(self.T, -1)).reshape(X.size())
+		AtXt = t.zeros(self.T, self.N, self.F[0])
+		for k in range(self.T):
+			AtXt[k] = t.sparse.mm(At[k], Xt[k])
+		return AtXt
+
+	def forward(self, At=None, X=None):
+		# Either use existing AtXt and edges, or compute new
+		AtXt = self.AtXt
+		
+		Wt = self.W # Do not transform W
+		AtXtWt = t.matmul(AtXt, Wt)
+		if self.use_Minv:
+			Y = t.matmul(self.Minv, AtXtWt.reshape(self.T, -1)).reshape(AtXtWt.size()) 
+		else:
+			Y = AtXtWt
+
+		output = self.lin1(Y)
+
+		return output.squeeze(2)
+
 class EmbeddingKWGCN(nn.Module):
 	"""
 	Embedding implementation of the baseline GCN with 1 or 2 layers
